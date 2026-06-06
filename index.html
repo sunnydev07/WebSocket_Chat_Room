@@ -67,7 +67,17 @@
       display:flex;
       gap:8px;
     }
-    input[type="text"].room {
+    .identityBox {
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .fieldLabel {
+      font-size:12px;
+      color:var(--muted);
+    }
+    input[type="text"].room,
+    input[type="text"].username {
       flex:1;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);
       background:transparent;color:inherit;font-size:14px;
       outline:none;
@@ -98,6 +108,19 @@
     .roomBadge {
       font-size:13px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.03);
       color:var(--muted);
+    }
+    .roomActions {
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+    button.leaveBtn {
+      padding:6px 10px;border-radius:999px;border:1px solid rgba(248,113,113,0.32);
+      background:rgba(248,113,113,0.08);color:#fca5a5;font-size:13px;font-weight:600;
+      cursor:pointer;
+    }
+    button.leaveBtn[disabled] {
+      opacity:0.4;cursor:not-allowed;
     }
 
     .messageDisplay {
@@ -163,6 +186,13 @@
       opacity:0.45; cursor:not-allowed; box-shadow:none;
     }
 
+    .typingIndicator {
+      min-height:18px;
+      font-size:12px;
+      color:var(--muted);
+      padding:0 4px;
+    }
+
     .hint {font-size:12px;color:var(--muted); margin-top:4px}
     @media(max-width:820px){
       .app{grid-template-columns:1fr; height:92vh}
@@ -181,6 +211,11 @@
           <h1>Messaging APP</h1>
           <div class="desc">Simple socket.io chat — improved UI</div>
         </div>
+      </div>
+
+      <div class="identityBox">
+        <label class="fieldLabel" for="username">Username</label>
+        <input id="username" class="username" type="text" placeholder="Enter your name" aria-label="Username">
       </div>
 
       <div class="roomBox" title="Join room">
@@ -204,12 +239,14 @@
           <div class="chatTitle">Room chat</div>
           <div class="desc" style="margin-top:4px">Real-time messages (local echo shown)</div>
         </div>
-        <div>
+        <div class="roomActions">
           <div id="roomBadge" class="roomBadge">No room</div>
+          <button id="leaveBtn" class="leaveBtn" onclick="leaveRoom()" disabled>Leave</button>
         </div>
       </div>
 
       <div id="messageDisplay" class="messageDisplay" aria-live="polite"></div>
+      <div id="typingIndicator" class="typingIndicator" aria-live="polite"></div>
 
       <div class="composer">
         <textarea id="message" placeholder="Type your message..." aria-label="Message input"></textarea>
@@ -228,26 +265,85 @@
     const messageBox = document.getElementById('messageDisplay');
     const messageInput = document.getElementById('message');
     const roomNumber = document.getElementById('roomNumber');
+    const usernameInput = document.getElementById('username');
     const joinBtn = document.getElementById('joinBtn');
+    const leaveBtn = document.getElementById('leaveBtn');
     const sendBtn = document.getElementById('sendBtn');
     const status = document.getElementById('status');
     const roomBadge = document.getElementById('roomBadge');
+    const typingIndicator = document.getElementById('typingIndicator');
 
     let roomId = null;
+    let isTyping = false;
+    let typingTimeout = null;
+    let typingIndicatorTimeout = null;
+    let activeTypingUsername = null;
+
+    function getUsername(){
+      return usernameInput.value.trim() || 'Anonymous';
+    }
+
     function updateSendState(){
       const hasText = messageInput.value.trim().length > 0;
       sendBtn.disabled = !hasText || !roomId;
     }
-    messageInput.addEventListener('input', updateSendState);
+
+    function clearTypingIndicator(username = null){
+      if(username && username !== activeTypingUsername) return;
+      clearTimeout(typingIndicatorTimeout);
+      typingIndicatorTimeout = null;
+      activeTypingUsername = null;
+      typingIndicator.textContent = '';
+    }
+
+    function showTypingIndicator(username){
+      const displayName = username || 'Anonymous';
+      activeTypingUsername = displayName;
+      typingIndicator.textContent = displayName + ' is typing...';
+      clearTimeout(typingIndicatorTimeout);
+      typingIndicatorTimeout = setTimeout(() => {
+        clearTypingIndicator(displayName);
+      }, 3000);
+    }
+
+    function stopTyping(){
+      clearTimeout(typingTimeout);
+      typingTimeout = null;
+      if(isTyping && roomId && socket.connected) {
+        socket.emit('stop-typing', {room: roomId, username: getUsername()});
+      }
+      isTyping = false;
+    }
+
+    function handleTyping(){
+      updateSendState();
+      const hasText = messageInput.value.trim().length > 0;
+      if(!roomId || !hasText) {
+        stopTyping();
+        return;
+      }
+
+      if(!isTyping) {
+        socket.emit('typing', {room: roomId, username: getUsername()});
+        isTyping = true;
+      }
+
+      clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(stopTyping, 1000);
+    }
+
+    messageInput.addEventListener('input', handleTyping);
     function sendMessage(){
       const raw = messageInput.value;
       const msg = raw.trim();
       if(!msg || !roomId) return;
+      const username = getUsername();
       // emit to socket
-      socket.emit('message', {room: roomId, msg});
+      socket.emit('message', {room: roomId, msg, username});
 
       // local echo as "sent"
-      appendMessage({msg, time: Date.now(), sent: true});
+      appendMessage({msg, username, time: Date.now(), sent: true});
+      stopTyping();
       messageInput.value = '';
       updateSendState();
     }
@@ -258,20 +354,47 @@
         status.textContent = 'Please enter a room number to join.';
         return;
       }
+      if(roomId === room) {
+        status.textContent = 'Already joined room ' + room + '.';
+        return;
+      }
+      if(roomId) {
+        stopTyping();
+        socket.emit('leave-room', roomId);
+      }
+      clearTypingIndicator();
       roomId = room;
       socket.emit('join-room', room);
       status.textContent = 'Joined room ' + room + '. Listening for messages...';
       roomBadge.textContent = 'Room ' + room;
       joinBtn.disabled = true;
       roomNumber.disabled = true;
+      leaveBtn.disabled = false;
       updateSendState();
       messageInput.focus();
       // optional: clear message area on join
       // messageBox.innerHTML = '';
     }
 
+    function leaveRoom(){
+      if(!roomId) return;
+      const previousRoom = roomId;
+      stopTyping();
+      socket.emit('leave-room', previousRoom);
+      roomId = null;
+      roomNumber.value = '';
+      roomNumber.disabled = false;
+      joinBtn.disabled = false;
+      leaveBtn.disabled = true;
+      roomBadge.textContent = 'No room';
+      status.textContent = 'Left room ' + previousRoom + '. Join a room to continue.';
+      clearTypingIndicator();
+      updateSendState();
+      roomNumber.focus();
+    }
+
     // Append message bubble
-    function appendMessage({msg, time = Date.now(), sent = false}){
+    function appendMessage({msg, username = 'Anonymous', time = Date.now(), sent = false}){
       const wrapper = document.createElement('div');
       const bubble = document.createElement('div');
       bubble.className = 'msg ' + (sent ? 'sent' : 'received');
@@ -280,7 +403,15 @@
       const meta = document.createElement('div');
       meta.className = 'meta';
       const ts = new Date(time);
-      meta.innerHTML = `<span>${sent ? 'You' : 'Peer'}</span><span>•</span><span>${ts.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>`;
+      const sender = document.createElement('span');
+      const separator = document.createElement('span');
+      const timestamp = document.createElement('span');
+      sender.textContent = username || 'Anonymous';
+      separator.textContent = '•';
+      timestamp.textContent = ts.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      meta.appendChild(sender);
+      meta.appendChild(separator);
+      meta.appendChild(timestamp);
 
       wrapper.appendChild(bubble);
       wrapper.appendChild(meta);
@@ -289,13 +420,14 @@
       messageBox.scrollTo({ top: messageBox.scrollHeight, behavior: 'smooth' });
     }
     
-    socket.on('new-message', (data) => {
-      let text = '';
-      if (typeof data === 'string') text = data;
-      else if (data && data.msg) text = data.msg;
-      else text = JSON.stringify(data);
-
-      appendMessage({ msg: text, time: Date.now(), sent: false });
+    socket.on('new-message', ({msg, username, time}) => {
+      appendMessage({msg, username, time, sent: false});
+    });
+    socket.on('user-typing', ({username}) => {
+      showTypingIndicator(username);
+    });
+    socket.on('user-stop-typing', ({username}) => {
+      clearTypingIndicator(username || 'Anonymous');
     });
     messageInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -315,6 +447,8 @@
       }
     });
     socket.on('disconnect', () => {
+      stopTyping();
+      clearTypingIndicator();
       status.textContent = 'Disconnected from server';
     });
     socket.on('connect', () => {
