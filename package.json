@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "Real-time room-based chat app using Socket.IO",
   "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sunnydev07/WebSocket_Chat_Room.git"
+  },
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js"
