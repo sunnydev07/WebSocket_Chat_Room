@@ -1,78 +1,85 @@
-# Web-Socket
+﻿# 💬 Web-Socket Chat Room
 
-A minimal real-time room-based chat app built with **Node.js**, **Express**, and **Socket.IO**.
+A minimal, real-time room-based chat application built with **Node.js**, **Express**, and **Socket.IO**.
 
-## Project Overview
+---
 
-This repository contains a single-server, single-page chat application:
+## 📌 Project Overview
 
-- Backend serves `index.html` and manages Socket.IO connections.
-- Users join a room and exchange real-time messages.
-- Frontend includes a modern chat UI with local message echo and keyboard shortcuts.
+This repository contains a lightweight, single-server real-time chat application:
 
-## Repository Structure
+- **Backend**: Serves static assets and orchestrates Socket.IO events and room broadcasts.
+- **Rooms**: Multiple users can join private room IDs and exchange real-time instant messages.
+- **Frontend**: Clean, responsive chat interface with local echo, auto-scroll, and keyboard shortcuts.
+
+---
+
+## 🏗️ System Architecture & Event Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client A
+    actor Client B
+    participant Server as Socket.IO Server (Port 3000)
+
+    Client A->>Server: emit("join-room", roomId)
+    Server-->>Client A: Joined room confirmation
+    Client B->>Server: emit("join-room", roomId)
+    Server-->>Client B: Joined room confirmation
+
+    Client A->>Server: emit("message", messageData)
+    Server->>Client B: to(roomId).emit("new-message", messageData)
+```
+
+---
+
+## 📡 Socket Event Reference
+
+| Event Name | Direction | Payload | Description |
+| :--- | :--- | :--- | :--- |
+| `join-room` | Client ➔ Server | `roomId: string` | Joins client socket to the room |
+| `message` | Client ➔ Server | `msg: string` | Sends a message to the active room |
+| `new-message` | Server ➔ Client | `msg: string` | Broadcasts new message to other room members |
+
+---
+
+## 📁 Repository Structure
 
 ```text
 Web-Socket/
 ├── index.js          # Express + Socket.IO server
 ├── index.html        # Chat UI and client-side socket logic
-├── package.json      # Dependencies
-└── package-lock.json # Lockfile
+├── package.json      # Dependencies and execution scripts
+├── .editorconfig     # Code styling rules
+└── README.md         # Project documentation
 ```
 
-## Tech Stack
+---
 
-- **express** `^5.1.0`
-- **socket.io** `^4.8.1`
-- Plain HTML/CSS/JavaScript for the client
+## 🚀 Setup & Run
 
-## How It Works
+### 1. Install Dependencies
+```bash
+npm install
+```
 
-### Server (`index.js`)
+### 2. Start the Server
+```bash
+# Production mode
+npm start
 
-- Creates an Express app.
-- Serves `index.html` at `/`.
-- Starts a Socket.IO server on port `3000`.
-- Handles:
-  - `join-room`: joins a socket to a room.
-  - `message`: forwards message to other users in the same room via `new-message`.
+# Development mode (with auto-reload)
+npm run dev
+```
 
-### Client (`index.html`)
+### 3. Open Application
+Navigate to [http://localhost:3000](http://localhost:3000) in your browser. Open multiple tabs or windows to test room-based messaging.
 
-- Connects to server with `io()`.
-- Lets user join a room by room number.
-- Sends messages with:
-  - Send button
-  - `Enter` key (send)
-  - `Shift+Enter` (newline)
-  - `Ctrl/Cmd + Enter` (send)
-- Renders sent and received message bubbles with timestamps.
+---
 
-## Setup & Run
+## ⌨️ Keyboard Shortcuts
 
-1. Install dependencies:
-
-   ```bash
-   npm install
-   ```
-
-2. Start the server:
-
-   ```bash
-   node index.js
-   ```
-
-3. Open:
-
-   ```text
-   http://localhost:3000
-   ```
-
-4. Use two browser tabs/windows, join the same room, and exchange messages.
-
-## Current Notes
-
-- `package.json` currently defines dependencies only (no npm scripts).
-- The server is intended to run on port `3000`.
-
-# Updated: 2026-07-03
+- `Enter`: Send message
+- `Shift + Enter`: Insert newline
+- `Ctrl/Cmd + Enter`: Send message
